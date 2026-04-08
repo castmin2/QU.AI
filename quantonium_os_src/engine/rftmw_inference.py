@@ -166,6 +166,7 @@ class CompressedInferenceEngine:
                 "CompressedInferenceEngine requires model_name_or_path. "
                 "Set QUANTONIUM_MODEL_ID or pass a model name explicitly."
             )
+        self.gguf_file = os.getenv("QUANTONIUM_GGUF_FILE", "").strip()
         self.device = device
         self.compress_kv_flag = compress_kv
         # If set, prevent Transformers from attempting network downloads.
@@ -236,10 +237,12 @@ class CompressedInferenceEngine:
         # --- Config hash ---------------------------------------------------
         try:
             from transformers import AutoConfig
-            cfg = AutoConfig.from_pretrained(
-                self.model_name,
-                local_files_only=self.local_files_only,
-            )
+            cfg_kwargs: Dict[str, Any] = {
+                "local_files_only": self.local_files_only,
+            }
+            if self.gguf_file:
+                cfg_kwargs["gguf_file"] = self.gguf_file
+            cfg = AutoConfig.from_pretrained(self.model_name, **cfg_kwargs)
             cfg_json = cfg.to_json_string(use_diff=False)
             prov["config_hash_sha256"] = hashlib.sha256(
                 cfg_json.encode()
@@ -302,17 +305,17 @@ class CompressedInferenceEngine:
         _lazy_import_torch_transformers()
 
         print(f"Loading {self.model_name}...")
-        self._tokenizer = AutoTokenizer.from_pretrained(
-            self.model_name,
-            local_files_only=self.local_files_only,
-        )
+        load_kwargs: Dict[str, Any] = {
+            "local_files_only": self.local_files_only,
+        }
+        if self.gguf_file:
+            load_kwargs["gguf_file"] = self.gguf_file
+
+        self._tokenizer = AutoTokenizer.from_pretrained(self.model_name, **load_kwargs)
         if self._tokenizer.pad_token is None:
             self._tokenizer.pad_token = self._tokenizer.eos_token
 
-        self._model = AutoModelForCausalLM.from_pretrained(
-            self.model_name,
-            local_files_only=self.local_files_only,
-        )
+        self._model = AutoModelForCausalLM.from_pretrained(self.model_name, **load_kwargs)
         self._model.eval()
         self._model.to(self.device)
 
@@ -382,12 +385,39 @@ class CompressedInferenceEngine:
         if self._tokenizer is not None:
             return
         _lazy_import_torch_transformers()
-        self._tokenizer = AutoTokenizer.from_pretrained(
-            self.model_name,
-            local_files_only=self.local_files_only,
-        )
+        load_kwargs: Dict[str, Any] = {
+            "local_files_only": self.local_files_only,
+        }
+        if self.gguf_file:
+            load_kwargs["gguf_file"] = self.gguf_file
+        self._tokenizer = AutoTokenizer.from_pretrained(self.model_name, **load_kwargs)
         if self._tokenizer.pad_token is None:
             self._tokenizer.pad_token = self._tokenizer.eos_token
+
+    def _hydrate_model_parameters(self, model: Any) -> None:
+        """Load decompressed tensors directly into a model shell without materializing a whole state_dict dict."""
+        loaded: set[str] = set()
+        for name, param in model.named_parameters():
+            if name not in self.memory._weights:
+                continue
+            arr = self.memory.get_weight(name)
+            tensor = torch.from_numpy(arr).to(dtype=param.dtype)
+            param.data.copy_(tensor)
+            loaded.add(name)
+
+        for name, buf in model.named_buffers():
+            if name not in self.memory._weights:
+                continue
+            arr = self.memory.get_weight(name)
+            tensor = torch.from_numpy(arr).to(dtype=buf.dtype)
+            buf.data.copy_(tensor)
+            loaded.add(name)
+
+        if hasattr(model, "tie_weights"):
+            try:
+                model.tie_weights()
+            except Exception:
+                pass
 
     def restore_and_generate(
         self,
@@ -408,8 +438,8 @@ class CompressedInferenceEngine:
 
         t0 = time.perf_counter()
 
-        # Decompress all weights into a state_dict
-        state_dict = self.memory.get_state_dict()
+        # Build the model shell, then hydrate parameters directly from compressed memory.
+        # This avoids materializing a second full state_dict in Python first.
         t_decompress = time.perf_counter() - t0
         self._decompress_times.append(t_decompress)
 
@@ -417,14 +447,14 @@ class CompressedInferenceEngine:
         # Newer transformers rejects state_dict= with a model name, so we
         # load config-only, instantiate an empty model, and load manually.
         from transformers import AutoConfig
-        config = AutoConfig.from_pretrained(
-            self.model_name,
-            local_files_only=self.local_files_only,
-        )
+        config_kwargs: Dict[str, Any] = {
+            "local_files_only": self.local_files_only,
+        }
+        if self.gguf_file:
+            config_kwargs["gguf_file"] = self.gguf_file
+        config = AutoConfig.from_pretrained(self.model_name, **config_kwargs)
         model = AutoModelForCausalLM.from_config(config)
-        # Use strict=False because our compressed dict may lack attn.bias
-        # (buffer, not parameter) and we may have lm_head tied to wte.
-        model.load_state_dict(state_dict, strict=False)
+        self._hydrate_model_parameters(model)
         model.eval()
         model.to(self.device)
 
@@ -459,7 +489,7 @@ class CompressedInferenceEngine:
         )
 
         # Free the full model to reclaim memory
-        del model, state_dict
+        del model
         gc.collect()
 
         # Best-effort chat stop: prevent the model from starting a new turn.

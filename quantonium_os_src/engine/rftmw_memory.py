@@ -73,6 +73,7 @@ sys.path.insert(0, str(_PROJECT_ROOT))
 
 from algorithms.rft.core.resonant_fourier_transform import PHI, rft_basis_matrix
 from algorithms.rft.routing import classify_signal, TransformType
+from quantonium_os_src.engine.three_distance_router import analyze_gap_structure, allocate_budget
 
 PHI = (1 + np.sqrt(5)) / 2
 
@@ -117,6 +118,47 @@ def _get_rft_impl() -> str:
     if impl not in {"canonical", "hybrid"}:
         impl = "canonical"
     return impl
+
+
+def _use_three_distance_router() -> bool:
+    return os.getenv("QUANTONIUM_THREE_DISTANCE_ROUTER", "1").strip() != "0"
+
+
+def _topological_name_bias(name: str) -> bool:
+    lowered = (name or "").lower()
+    keywords = (
+        "embed",
+        "wte",
+        "attn",
+        "proj",
+        "q_proj",
+        "k_proj",
+        "v_proj",
+        "o_proj",
+        "mlp",
+        "gate",
+        "lm_head",
+        "rope",
+        "norm",
+    )
+    return any(token in lowered for token in keywords)
+
+
+def _apply_retention_budget(coeffs: np.ndarray, keep_ratio: float, *, prefer_zones: bool) -> np.ndarray:
+    if prefer_zones and _use_three_distance_router() and coeffs.ndim == 1 and coeffs.size >= 32:
+        try:
+            gap_info = analyze_gap_structure(int(coeffs.size))
+            return allocate_budget(coeffs, keep_ratio, gap_info)
+        except Exception:
+            pass
+
+    mags = np.abs(coeffs)
+    k = max(1, int(coeffs.size * keep_ratio))
+    if k >= coeffs.size:
+        return coeffs
+    thresh = np.sort(mags)[::-1][k - 1]
+    mask = mags >= thresh
+    return coeffs * mask
 
 
 # ===================================================================
@@ -210,6 +252,7 @@ def _compress_rft(
     phase_bits: int = 10,
     *,
     rft_impl: Optional[str] = None,
+    zone_router: bool = False,
 ) -> Tuple[bytes, float]:
     """
     Compress via canonical Gram-normalized RFT → top-k → quantize → zlib.
@@ -267,13 +310,13 @@ def _compress_rft(
         mags = np.abs(coeffs)
         phases = np.angle(coeffs)
 
-        # Top-k thresholding
-        k = max(1, int(BLOCK * keep_ratio))
-        if k < BLOCK:
-            thresh = np.sort(mags)[::-1][k - 1]
-            mask = mags >= thresh
-            mags = mags * mask
-            phases = phases * mask
+        coeffs = _apply_retention_budget(
+            coeffs,
+            keep_ratio,
+            prefer_zones=zone_router,
+        )
+        mags = np.abs(coeffs)
+        phases = np.angle(coeffs)
 
         peak = mags.max() + 1e-15
         block_peaks.append(peak)
@@ -455,7 +498,7 @@ def _decompress_int8_blob(blob: bytes) -> np.ndarray:
 # ===================================================================
 
 def _compress_kv_tensor(t: np.ndarray, method: CompressionMethod,
-                         keep_ratio: float = 0.30) -> Tuple[bytes, int]:
+                          keep_ratio: float = 0.30) -> Tuple[bytes, int]:
     """Compress a single K or V tensor.  Returns (blob, original_bytes)."""
     orig = t.nbytes
     if method == CompressionMethod.RFT:
@@ -465,6 +508,7 @@ def _compress_kv_tensor(t: np.ndarray, method: CompressionMethod,
             mag_bits=10,
             phase_bits=8,
             rft_impl=_get_rft_impl(),
+            zone_router=True,
         )
     else:
         blob, _ = _compress_int8_zlib(t)
@@ -526,6 +570,8 @@ class RFTMWMemoryLayer:
         self._weights: Dict[str, TensorSlot] = {}
         self._kv_cache: Dict[int, KVCacheSlot] = {}
         self._report = MemoryReport()
+        self.topological_entropy_margin = float(os.getenv("QUANTONIUM_TOPOLOGICAL_ENTROPY_MARGIN", "0.70"))
+        self.topological_error_relaxation = float(os.getenv("QUANTONIUM_TOPOLOGICAL_ERROR_RELAXATION", "4.0"))
 
         # Lazy-loaded from persisted pack (optional).
         self._loaded_from_pack: Optional[str] = None
@@ -676,11 +722,14 @@ class RFTMWMemoryLayer:
         else:
             variance_norm = float(np.var(flat64 / amax))
             is_near_constant = variance_norm < 1e-8
+        prefer_topological = _topological_name_bias(name)
 
         if force_method is not None:
             method = force_method
         elif is_near_constant:
             method = CompressionMethod.INT8_ZLIB
+        elif prefer_topological and entropy < (self.entropy_threshold + self.topological_entropy_margin):
+            method = CompressionMethod.RFT
         elif entropy < self.entropy_threshold:
             method = CompressionMethod.RFT
         else:
@@ -696,12 +745,14 @@ class RFTMWMemoryLayer:
                     w,
                     keep_ratio=self.weight_keep_ratio,
                     rft_impl=self._rft_impl,
+                    zone_router=prefer_topological,
                 )
             # Error-based fallback: if RFT error too high, try INT8
             # (only when the router chose RFT, NOT when the caller forced it)
-            if force_method is None and err > self.max_rft_error:
+            allowed_rft_error = self.max_rft_error * (self.topological_error_relaxation if prefer_topological else 1.0)
+            if force_method is None and err > allowed_rft_error:
                 blob_i8, err_i8 = _compress_int8_zlib(w)
-                if err_i8 < err:
+                if err_i8 + 0.002 < err:
                     blob, err, method = blob_i8, err_i8, CompressionMethod.INT8_ZLIB
             if method == CompressionMethod.RFT:
                 self._report.rft_layers += 1
@@ -726,6 +777,42 @@ class RFTMWMemoryLayer:
         self._report.total_original_bytes += original_bytes
         self._report.total_compressed_bytes += len(blob)
         return slot
+
+    def ingest_named_tensors(
+        self,
+        tensors: List[Tuple[str, np.ndarray]],
+        *,
+        layer_limit: Optional[int] = None,
+        verbose: bool = True,
+    ) -> MemoryReport:
+        """Compress an iterable of pre-mapped named tensors without building a full model object."""
+        t0 = time.perf_counter()
+        count = 0
+
+        if verbose:
+            print("=" * 72)
+            print("RFTMW MEMORY LAYER - Ingesting named tensors")
+            print("=" * 72)
+
+        for name, arr in tensors:
+            if layer_limit is not None and count >= layer_limit:
+                break
+            slot = self.ingest_tensor(name, np.asarray(arr))
+            count += 1
+
+            if verbose:
+                ratio = slot.original_bytes / max(slot.compressed_bytes, 1)
+                tag = "RFT" if slot.method == CompressionMethod.RFT else (
+                    "INT8" if slot.method == CompressionMethod.INT8_ZLIB else "skip")
+                print(f"  {name[:55]:<55} {ratio:>6.2f}x  H={slot.spectral_entropy:.3f}  "
+                      f"err={slot.reconstruction_error*100:.3f}%  {tag}")
+
+        elapsed = time.perf_counter() - t0
+        if verbose:
+            print(f"\nIngested {count} tensors in {elapsed:.1f}s")
+            self.print_report()
+
+        return self._report
 
     def ingest_model(self, model: Any, *, layer_limit: Optional[int] = None,
                       verbose: bool = True) -> MemoryReport:

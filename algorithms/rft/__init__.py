@@ -57,9 +57,12 @@ from algorithms.rft.core.resonant_fourier_transform import (
     BinaryRFT,
 )
 
-# Import the full-featured RFT-SIS hash from crypto module (patent Claim 2),
-# not the stub in core/resonant_fourier_transform.py
-from algorithms.rft.crypto.rft_sis_hash import RFTSISHash
+# Import the full-featured RFT-SIS hash when the crypto subtree is present.
+# The trimmed chatbox runtime export does not ship that optional package.
+try:
+    from algorithms.rft.crypto.rft_sis_hash import RFTSISHash
+except Exception:  # pragma: no cover - optional in the slim runtime export
+    RFTSISHash = None
 
 
 def rft_forward_canonical(x: np.ndarray) -> np.ndarray:
@@ -85,5 +88,6 @@ __all__ = [
     'rft',
     'irft',
     'BinaryRFT',
-    'RFTSISHash',
 ]
+if RFTSISHash is not None:
+    __all__.append('RFTSISHash')
