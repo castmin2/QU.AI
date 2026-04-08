@@ -1,0 +1,85 @@
+{
+  "generated_at_utc": "2026-04-08T13:45:00Z",
+  "updates": [
+    {
+      "id": "qwen-direct-gguf",
+      "title": "Direct-GGUF qwen pack is the default bundle",
+      "detail": "The hosted runtime now treats qwen2.5-coder:3b as the default repo-local bundle and expects qwen2.5-coder_3b.rftmwpk in ai/runtime/chatbox/packs/."
+    },
+    {
+      "id": "oracle-prereq-feed",
+      "title": "Oracle bucket prerequisite path is wired",
+      "detail": "Hosted deployments can override the pack source with ORACLE_OBJECT_PREAUTH_URL so Replit pulls the pack from Oracle Object Storage instead of the Google Drive fallback."
+    },
+    {
+      "id": "expo-runtime-contract",
+      "title": "Expo app scaffold now follows the hosted runtime contract",
+      "detail": "The mobile frontend reads runtime status, updates, research, and route maps from the lightweight Python host API instead of embedding storage or manifest assumptions."
+    }
+  ],
+  "research": [
+    {
+      "id": "expo-router",
+      "title": "Use Expo Router for the mobile host shell",
+      "detail": "Expo recommends Expo Router for new projects because the file-based app directory keeps navigation, typed routes, and deep linking aligned across iOS, Android, and web."
+    },
+    {
+      "id": "oracle-object-storage",
+      "title": "Use pre-authenticated Oracle object URLs for pack delivery",
+      "detail": "For a 2.13 GB pack prerequisite, a pre-authenticated object URL is the simplest hosted path because the runtime only needs signed HTTPS download access and checksum validation."
+    },
+    {
+      "id": "host-runtime-contract",
+      "title": "Keep the backend contract narrow",
+      "detail": "The hosted runtime should expose a small JSON surface: health, bootstrap manifest, update notes, research notes, and route definitions that the Expo app can render directly."
+    }
+  ],
+  "routes": [
+    {
+      "path": "/",
+      "screen": "Runtime",
+      "purpose": "Show bundle health, pack metadata, and hosted runtime status."
+    },
+    {
+      "path": "/updates",
+      "screen": "Updates",
+      "purpose": "Track runtime, pack, and deployment deltas for the hosted app."
+    },
+    {
+      "path": "/research",
+      "screen": "Research",
+      "purpose": "Expose architecture notes for Oracle storage, Expo hosting, and runtime integration."
+    },
+    {
+      "path": "/routing",
+      "screen": "Routing",
+      "purpose": "Document app routes plus the backend API routes the mobile shell consumes."
+    }
+  ],
+  "api_routes": [
+    {
+      "path": "/healthz",
+      "purpose": "Hosted runtime health and pack readiness."
+    },
+    {
+      "path": "/api/runtime/bootstrap",
+      "purpose": "Effective bundle contract, pack target paths, and environment overrides."
+    },
+    {
+      "path": "/api/runtime/manifest",
+      "purpose": "Raw manifest plus environment-adjusted bundle download settings."
+    },
+    {
+      "path": "/api/runtime/updates",
+      "purpose": "Frontend-visible update feed."
+    },
+    {
+      "path": "/api/runtime/research",
+      "purpose": "Frontend-visible architecture and hosting notes."
+    },
+    {
+      "path": "/api/runtime/routes",
+      "purpose": "Client route map and backend endpoint summary."
+    }
+  ]
+}

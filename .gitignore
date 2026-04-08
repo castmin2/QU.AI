@@ -3,6 +3,10 @@ __pycache__/
 .venv/
 env/
 venv/
+.env
+.env.*
+!.env.example
+!frontend/expo-ai/.env.example
 logs/
 *.log
 .pytest_cache/
@@ -14,6 +18,10 @@ ai/hf_cache/
 ai/cache/
 ai/runtime/chatbox/packs/*.rftmwpk
 ai/runtime/chatbox/packs/*.partial
+frontend/expo-ai/node_modules/
+frontend/expo-ai/.expo/
+frontend/expo-ai/dist/
+frontend/expo-ai/web-build/
 
 # OS / editor noise
 .DS_Store

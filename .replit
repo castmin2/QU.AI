@@ -1,0 +1,4 @@
+language = "python3"
+entrypoint = "src/apps/runtime_host_api.py"
+run = "python src/apps/runtime_host_api.py --prefetch-default-pack"
+hidden = [".git", ".venv", "__pycache__", "frontend/expo-ai/node_modules", "ai/runtime/chatbox/packs"]
