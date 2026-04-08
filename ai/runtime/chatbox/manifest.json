@@ -1,0 +1,34 @@
+{
+  "format_version": 1,
+  "generated_at_utc": "2026-04-08T07:30:00Z",
+  "bundles": [
+    {
+      "bundle_id": "qwen2.5-coder-3b",
+      "model_name": "qwen2.5-coder:3b",
+      "pack_path": "packs/qwen2.5-coder_3b.rftmwpk",
+      "model_path": "models/qwen2.5-coder-3b",
+      "state_dict_hash_sha256": "7ad9899be6aa2643efb160d044253ca7866b0e3525c986a2428c2a4ce72784c3",
+      "fp32_size_bytes": 2128004908,
+      "pack_download": {
+        "provider": "google_drive",
+        "share_url": "https://drive.google.com/file/d/1AHPK6lvrcb_3XhkPCsAf96Xj9uD0cbog/view?usp=sharing",
+        "direct_url": "https://drive.google.com/uc?export=download&id=1AHPK6lvrcb_3XhkPCsAf96Xj9uD0cbog",
+        "filename": "qwen2.5-coder_3b.rftmwpk",
+        "size_bytes": 2128004908,
+        "gguf_sha256": "4a188102020e9c9530b687fd6400f775c45e90a0d7baafe65bd0a36963fbb7ba",
+        "pack_provenance_sha256": "7ad9899be6aa2643efb160d044253ca7866b0e3525c986a2428c2a4ce72784c3",
+        "meta_path": "packs/qwen2.5-coder_3b.rftmwpk.meta.json"
+      },
+      "copied_model_files": [
+        "chat_template.jinja",
+        "config.json",
+        "generation_config.json",
+        "tokenizer.json",
+        "tokenizer_config.json"
+      ]
+    }
+  ],
+  "default_bundle": "qwen2.5-coder-3b",
+  "bundle_root": "ai/runtime/chatbox",
+  "note": "Repo-local qwen2.5-coder:3b direct-GGUF RFTMW bundle. The pack binary is hosted externally and can be fetched into packs/."
+}
