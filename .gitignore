@@ -12,6 +12,8 @@ logs/
 # Local model caches
 ai/hf_cache/
 ai/cache/
+ai/runtime/chatbox/packs/*.rftmwpk
+ai/runtime/chatbox/packs/*.partial
 
 # OS / editor noise
 .DS_Store

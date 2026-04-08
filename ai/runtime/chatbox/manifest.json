@@ -1,6 +1,6 @@
 {
   "format_version": 1,
-  "generated_at_utc": "2026-04-08T07:30:00Z",
+  "generated_at_utc": "2026-04-08T08:05:00Z",
   "bundles": [
     {
       "bundle_id": "qwen2.5-coder-3b",
@@ -15,6 +15,7 @@
         "direct_url": "https://drive.google.com/uc?export=download&id=1AHPK6lvrcb_3XhkPCsAf96Xj9uD0cbog",
         "filename": "qwen2.5-coder_3b.rftmwpk",
         "size_bytes": 2128004908,
+        "pack_file_sha256": "502112d74e76d8d1d38c6189a038cc45ffd229fb773f557067dc21c3355e0d33",
         "gguf_sha256": "4a188102020e9c9530b687fd6400f775c45e90a0d7baafe65bd0a36963fbb7ba",
         "pack_provenance_sha256": "7ad9899be6aa2643efb160d044253ca7866b0e3525c986a2428c2a4ce72784c3",
         "meta_path": "packs/qwen2.5-coder_3b.rftmwpk.meta.json"

@@ -184,10 +184,10 @@ def _iter_pack_paths() -> Iterable[Path]:
 
 def discover_rftmw_packs(*, max_results: int = 8) -> List[RFTMWPackCandidate]:
     candidates: List[RFTMWPackCandidate] = _discover_manifest_packs()
-    seen_paths = {str(c.path).strip().lower() for c in candidates}
+    seen_paths = {str(Path(c.path).resolve(strict=False)).lower() for c in candidates}
 
     for pack_path in _iter_pack_paths():
-        pack_key = str(pack_path).strip().lower()
+        pack_key = str(Path(pack_path).resolve(strict=False)).lower()
         if pack_key in seen_paths:
             continue
         try:
